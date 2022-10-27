@@ -1,5 +1,12 @@
 # Rationale_Extraction_using_Diffmask
 
+## Introduction
+
+For the NLI and sentiment analysis tasks, the rationale for the prediction result was extracted using the post-analysis model.
+To utilize the extracted rationale, we propose a method for integrating rationale information using rationale embedding.
+Rationale embedding is effective in improving the model's performance by helping the model's prediction process.
+It was shown that the rationale extracted using the post-hoc analysis model has significant information.
+
 ## Dependencies
 
   python>=3.6
