@@ -33,7 +33,7 @@ $ run_sst.sh
 
 ## train diffmask
 
-$ run_sst_diffmask
+$ run_sst_diffmask.sh
 
 ## rationale extraction
 
