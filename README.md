@@ -11,6 +11,8 @@ It was shown that the rationale extracted using the post-hoc analysis model has 
 
 * 정영준, 이창기. 근거를 이용한 한국어 감성 분석, 제34회 한글 및 한국어 정보처리 학술대회, 2022
 
+![image](https://user-images.githubusercontent.com/41266083/209643638-cdbd111c-8d9c-4f05-80c9-d376ca6e5e55.jpeg)
+
 ## Dependencies
 
   python>=3.6
