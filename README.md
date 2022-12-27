@@ -1,4 +1,4 @@
-# Rationale_Extraction_using_Diffmask
+# Rationale_Extraction_using_DIFFMASK
 
 ## Introduction
 
