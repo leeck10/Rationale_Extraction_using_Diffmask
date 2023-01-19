@@ -31,9 +31,16 @@ if __name__ == "__main__":
         "--architecture", type=str, default="bert", choices=["gru", "bert"]
     )
 
-    parser.add_argument("--dataset", type=str, choices=["nsmc", "kornli"])
+    parser.add_argument("--train_rationale", default=None, type=str)
+    parser.add_argument("--val_rationale", default=None, type=str)
+    parser.add_argument("--dataset", type=str, choices=["esnli", "coco"])
     parser.add_argument("--save_name", default=None, type=str)
-    parser.add_argument("--num_labels", default=2, type=int)
+    parser.add_argument("--num_labels", default=3, type=int)
+    parser.add_argument("--token_cls", action="store_true")
+
+    parser.add_argument(
+        "--model_path", type=str, default=None,
+    )
 
     hparams = parser.parse_args()
 
@@ -43,6 +50,8 @@ if __name__ == "__main__":
 
     if hparams.architecture == "bert":
         model = BertSentimentClassificationSST(hparams)
+        if hparams.model_path is not None:
+            model = model.load_from_checkpoint(hparams.model_path)
     elif hparams.architecture == "gru":
         model = RecurrentSentimentClassificationSST(hparams)
     else:

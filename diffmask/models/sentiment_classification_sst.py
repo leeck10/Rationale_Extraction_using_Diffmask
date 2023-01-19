@@ -7,17 +7,23 @@ from transformers import (
     BertConfig,
     get_constant_schedule_with_warmup,
     get_constant_schedule,
+    BertForTokenClassification
 )
 from ..utils.util import accuracy_precision_recall_f1
+import csv
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, sents, labels):
+    def __init__(self, sents, labels, rationales=None):
         self.sents = sents
         self.labels = labels
+        self.rationales = rationales
 
     def __getitem__(self, index):
         sent = self.sents[index]
         label = self.labels[index]
+        if self.rationales is not None:
+            rationale = self.rationales[index]
+            return sent, label, rationale
         return sent, label
 
     def __len__(self):
@@ -30,41 +36,128 @@ def my_collate_fn(batch):
     for sent, label in batch:
         collate_sents.append(sent)
         collate_labels.append(label)
-
     return [collate_sents, torch.as_tensor(collate_labels)]
+    
+def my_collate_fn_token(batch):
+    collate_sents = []
+    collate_labels = []
 
-def load_sst(path, tokenizer, dataset, lower=False):
+    for sent, label in batch:
+        collate_sents.append(sent)
+        collate_labels.append(torch.as_tensor(label))
+    collate_labels = torch.nn.utils.rnn.pad_sequence(collate_labels, batch_first=True)
+    return [collate_sents, collate_labels]
+
+def my_collate_fn_rationale(batch):
+    collate_sents = []
+    collate_labels = []
+    collate_rationales = []
+
+    for sent, label, rationale in batch:
+        collate_sents.append(sent)
+        collate_labels.append(label)
+        collate_rationales.append(torch.as_tensor(rationale))
+    collate_rationales = torch.nn.utils.rnn.pad_sequence(collate_rationales, batch_first=True)
+    return [collate_sents, torch.as_tensor(collate_labels), collate_rationales]
+
+def load_sst(path, tokenizer, dataset, num_labels, rationale_path, token_cls, lower=False):
     dataset_orig = []
-    sents, labels = [], []
+    sents, labels, rationales = [], [], []
 
-    with open(path, mode="r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    if dataset == 'nsmc':
-        for line in lines[1:]:
-            line = line.split('\t')
-            sent = line[1].strip()
-            label = int(line[2].strip())
-            sents.append(sent)
-            labels.append(label)
-            dataset_orig.append((sent, label))
+    if num_labels == 2:
+        label_idx = {'entailment': 0, 'contradiction': 1, 'neutral': 2}
     else:
-        label_idx = {'entailment': 2, 'neutral': 1, 'contradiction': 0}
-        for line in lines[1:]:
-            line = line.split('\t')
-            label = label_idx[int(line[2].strip())]
-            sent = (line[0].strip(), line[1].strip())
-            sents.append(sent)
-            labels.append(label)
-            dataset_orig.append((sent, label))
+        label_idx = {'entailment': 0, 'neutral': 1, 'contradiction': 2}
 
-    return MyDataset(sents, labels), dataset_orig
+    if dataset == 'coco':
+        with open(path, mode="r", encoding="utf-8") as f:
+            lines = f.readlines()
+            if token_cls:
+                with open(rationale_path, mode="r", encoding="utf-8") as fr:
+                    lines_rationale = fr.readlines()
+                for line, line_rationale in zip(lines, lines_rationale):
+                    line = line.split('\t')
+                    if num_labels == 2 and label_idx[line[0].strip()] == 2:
+                        continue
+                    label = list(map(int, line_rationale.strip().split()))
+                    sent = (line[1].strip(), line[2].strip())
+                    sents.append(sent)
+                    labels.append(label)
+                    dataset_orig.append((sent, label))
+                return MyDataset(sents, labels), dataset_orig
+            elif rationale_path is not None:
+                with open(rationale_path, mode="r", encoding="utf-8") as fr:
+                    lines_rationale = fr.readlines()
+                for line, line_rationale in zip(lines, lines_rationale):
+                    line = line.split('\t')
+                    label = label_idx[line[0].strip()]
+                    if num_labels == 2 and label == 2:
+                        continue
+                    sent = (line[1].strip(), line[2].strip())
+                    rationale = list(map(int, line_rationale.strip().split(' ')))
+                    sents.append(sent)
+                    labels.append(label)
+                    rationales.append(rationale)
+                    dataset_orig.append((sent, label, rationale))
+                return MyDataset(sents, labels, rationales), dataset_orig
+            else:
+                for line in lines:
+                    line = line.split('\t')
+                    label = label_idx[line[0].strip()]
+                    if num_labels == 2 and label == 2:
+                        continue
+                    sent = (line[1].strip(), line[2].strip())
+                    sents.append(sent)
+                    labels.append(label)
+                    dataset_orig.append((sent, label))
+                return MyDataset(sents, labels), dataset_orig
+    else:
+        with open(path, mode="r", encoding="utf-8") as f:
+            lines = csv.reader(f)
+            lines.__next__()
+
+            if token_cls:
+                with open(rationale_path, mode="r", encoding="utf-8") as fr:
+                    lines_rationale = fr.readlines()
+                for line, line_rationale in zip(lines, lines_rationale):
+                    if num_labels == 2 and label_idx[line[1].strip()] == 2:
+                        continue
+                    label = list(map(int, line_rationale.strip().split()))
+                    sent = (line[2].strip(), line[3].strip())
+                    sents.append(sent)
+                    labels.append(label)
+                    dataset_orig.append((sent, label))
+                return MyDataset(sents, labels), dataset_orig
+            elif rationale_path is not None:
+                with open(rationale_path, mode="r", encoding="utf-8") as fr:
+                    lines_rationale = fr.readlines()
+                for line, line_rationale in zip(lines, lines_rationale):
+                    label = label_idx[line[1].strip()]
+                    if num_labels == 2 and label == 2:
+                        continue
+                    sent = (line[2].strip(), line[3].strip())
+                    rationale = list(map(int, line_rationale.strip().split(' ')))
+                    sents.append(sent)
+                    labels.append(label)
+                    rationales.append(rationale)
+                    dataset_orig.append((sent, label, rationale))
+                return MyDataset(sents, labels, rationales), dataset_orig
+            else:
+                for line in lines:
+                    label = label_idx[line[1].strip()]
+                    if num_labels == 2 and label == 2:
+                        continue
+                    sent = (line[2].strip(), line[3].strip())
+                    sents.append(sent)
+                    labels.append(label)
+                    dataset_orig.append((sent, label))
+                return MyDataset(sents, labels), dataset_orig
 
 class SentimentClassificationSST(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         self.hparams = hparams
-        self.tokenizer = BertTokenizer.from_pretrained(self.hparams.model, do_lower_case=False)
+        self.tokenizer = BertTokenizer.from_pretrained(self.hparams.model)
 
     def prepare_data(self):
         # assign to use in dataloaders
@@ -72,21 +165,33 @@ class SentimentClassificationSST(pl.LightningModule):
             self, "train_dataset_orig"
         ):
             self.train_dataset, self.train_dataset_orig = load_sst(
-                self.hparams.train_filename, self.tokenizer, self.hparams.dataset
+                self.hparams.train_filename, self.tokenizer, self.hparams.dataset, self.hparams.num_labels, rationale_path=self.hparams.train_rationale, token_cls=self.hparams.token_cls
             )
         if not hasattr(self, "val_dataset") or not hasattr(self, "val_dataset_orig"):
             self.val_dataset, self.val_dataset_orig = load_sst(
-                self.hparams.val_filename, self.tokenizer, self.hparams.dataset
+                self.hparams.val_filename, self.tokenizer, self.hparams.dataset, self.hparams.num_labels, rationale_path=self.hparams.val_rationale, token_cls=self.hparams.token_cls
             )
 
-    def train_dataloader(self):
+    def train_dataloader(self, shuffle=True):
+        if self.hparams.token_cls:
+            collate_fn = my_collate_fn_token
+        elif self.hparams.train_rationale is not None:
+            collate_fn = my_collate_fn_rationale
+        else:
+            collate_fn = my_collate_fn
         return torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=self.hparams.batch_size, shuffle=True, collate_fn=my_collate_fn, num_workers=8
+            self.train_dataset, batch_size=self.hparams.batch_size, shuffle=shuffle, collate_fn=collate_fn, num_workers=8
         )
 
     def val_dataloader(self):
+        if self.hparams.token_cls:
+            collate_fn = my_collate_fn_token
+        elif self.hparams.val_rationale is not None:
+            collate_fn = my_collate_fn_rationale
+        else:
+            collate_fn = my_collate_fn
         return torch.utils.data.DataLoader(
-            self.val_dataset, batch_size=self.hparams.batch_size, collate_fn=my_collate_fn, num_workers=8
+            self.val_dataset, batch_size=self.hparams.batch_size, collate_fn=collate_fn, num_workers=8
         )
 
     def training_step(self, batch, batch_idx=None):
@@ -96,16 +201,25 @@ class SentimentClassificationSST(pl.LightningModule):
         mask = inputs['attention_mask']
         token_type_ids = inputs['token_type_ids']
         labels = batch[1]
+        rationale_ids = None
 
-        logits = self.forward(input_ids, mask, token_type_ids)[0]
-
-        loss = torch.nn.functional.cross_entropy(logits, labels, reduction="none").mean(
-            -1
-        )
-
-        acc, _, _, f1 = accuracy_precision_recall_f1(
-            logits.argmax(-1), labels, average=True
-        )
+        if self.hparams.token_cls:
+            loss, logits = self.forward(input_ids, mask, token_type_ids, labels=labels)
+            logit = torch.masked_select(logits.argmax(-1).view(-1), (mask.view(-1)) == 1)
+            label = torch.masked_select(labels.view(-1), (mask.view(-1)) == 1)
+            acc, _, _, f1 = accuracy_precision_recall_f1(
+                logit, label, average=True
+            )
+        else:
+            if len(batch) == 3:
+                rationale_ids = batch[2]
+            logits = self.forward(input_ids, mask, token_type_ids, rationale_ids=rationale_ids)[0]
+            loss = torch.nn.functional.cross_entropy(logits, labels, reduction="none").mean(
+                -1
+            )
+            acc, _, _, f1 = accuracy_precision_recall_f1(
+                logits.argmax(-1), labels, average=True
+            )
 
         outputs_dict = {
             "acc": acc,
@@ -163,12 +277,23 @@ class BertSentimentClassificationSST(SentimentClassificationSST):
 
         config = BertConfig.from_pretrained(self.hparams.model)
         config.num_labels = self.hparams.num_labels
-        self.net = BertForSequenceClassification.from_pretrained(
+        config.rationale = None
+        if self.hparams.token_cls:
+            self.net = BertForTokenClassification.from_pretrained(
             self.hparams.model, config=config
         )
+        else:
+            if self.hparams.train_rationale is not None:
+                config.rationale = True
+            self.net = BertForSequenceClassification.from_pretrained(
+                self.hparams.model, config=config
+            )
 
-    def forward(self, input_ids, mask, token_type_ids, labels=None):
-        return self.net(input_ids=input_ids, attention_mask=mask, token_type_ids=token_type_ids)
+    def forward(self, input_ids, mask, token_type_ids, rationale_ids=None, labels=None):
+        if self.hparams.token_cls:
+            return self.net(input_ids=input_ids, attention_mask=mask, token_type_ids=token_type_ids, labels=labels)
+        else:
+            return self.net(input_ids=input_ids, attention_mask=mask, token_type_ids=token_type_ids, rationale_ids=rationale_ids, labels=labels)
 
 
 class RecurrentSentimentClassificationSST(SentimentClassificationSST):
