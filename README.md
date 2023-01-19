@@ -25,6 +25,6 @@ It was shown that the rationale extracted using the post-hoc analysis model has 
 ## Installation
 
 ```bash
-$ cd transformers-2.9.0
+$ cd transformers-2.9.0/
 $ pip install ./
 ```
